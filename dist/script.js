@@ -1,3 +1,28 @@
+const sidebarToggle = document.getElementById("sidebar-toggle")
+const sidebar = document.getElementById("sidebar")
+let sidebarOpen = true
+
+sidebarToggle.addEventListener("click", () => {
+  sidebarOpen = !sidebarOpen
+  sidebar.style.width = sidebarOpen ? "16rem" : "0"
+  sidebar.style.padding = sidebarOpen ? "1rem" : "0"
+})
+
+function renderNotesList() {
+  const notesList = document.getElementById("notes-list")
+  notesList.innerHTML = ""
+  notes.forEach((note, index) => {
+    const noteItem = document.createElement("div")
+    noteItem.className = "p-2 hover:bg-gray-300 cursor-pointer rounded"
+    noteItem.innerHTML = `
+      <h3 class="font-medium text-gray-800 truncate">${note.title || "Untitled Note"}</h3>
+      <p class="text-sm text-gray-500 truncate">${note.content.replace(/<[^>]*>/g, "").slice(0, 50)}...</p>
+    `
+    noteItem.addEventListener("click", () => openEditMode(index))
+    notesList.appendChild(noteItem)
+  })
+}
+
 const notesContainer = document.getElementById("notes-container")
 const addNoteBtn = document.getElementById("add-note-btn")
 const editOverlay = document.getElementById("edit-overlay")
@@ -32,31 +57,45 @@ let currentFormatState = {
 function renderNotes() {
   notesContainer.innerHTML = ""
   notes.forEach((note, index) => {
-  const noteElement = document.createElement("div")
-  noteElement.className = "bg-white p-4 rounded-lg shadow relative group"
-  noteElement.innerHTML = `
-      <div class="cursor-pointer">
-        <h2 class="text-lg font-bold mb-2">${note.title || "Untitled Note"}</h2>
-        <div class="note-content break-words mb-2 overflow-hidden" style="max-height: 100px;">
-          ${note.content || '<span class="text-gray-400 italic">Empty note</span>'}
-        </div>
+    const noteElement = document.createElement("div")
+    noteElement.className =
+      "bg-white p-4 rounded-lg shadow relative group cursor-pointer transform transition-all duration-300 hover:scale-105 opacity-0"
+    noteElement.style.animation = `fadeIn 0.5s ease-out ${index * 0.1}s forwards`
+    noteElement.innerHTML = `
+      <h2 class="text-lg font-bold mb-2 truncate">${note.title || "Untitled Note"}</h2>
+      <div class="note-content break-words mb-2 overflow-hidden" style="max-height: 100px;">
+        ${note.content || '<span class="text-gray-400 italic">Empty note</span>'}
       </div>
-      <div class="absolute bottom-2 right-2">
-        <button class="delete-btn text-red-400 hover:text-red-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity duration-200" aria-label="Delete note">
+      <div class="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <button class="delete-btn text-red-400 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 rounded-full p-1" aria-label="Delete note">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
           </svg>
         </button>
       </div>
     `
-  noteElement.querySelector(".cursor-pointer").addEventListener("click", () => openEditMode(index))
-  noteElement.querySelector(".delete-btn").addEventListener("click", (e) => {
-    e.stopPropagation()
-    showDeleteConfirmation(index)
+    noteElement.addEventListener("click", (e) => {
+      if (!e.target.closest(".delete-btn")) {
+        openEditMode(index)
+      }
+    })
+    noteElement.querySelector(".delete-btn").addEventListener("click", (e) => {
+      e.stopPropagation()
+      showDeleteConfirmation(index)
+    })
+    notesContainer.appendChild(noteElement)
   })
-  notesContainer.appendChild(noteElement)
-  })
+  renderNotesList()
 }
+
+const style = document.createElement("style")
+style.textContent = `
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+`
+document.head.appendChild(style)
 
 function saveNotes() {
   localStorage.setItem("notes", JSON.stringify(notes))
@@ -64,15 +103,15 @@ function saveNotes() {
 
 function addNote() {
   const newNote = {
-  title: "Untitled Note",
-  content: "",
-  fontSize: 16,
-  color: "#000000",
+    title: "Untitled Note",
+    content: "",
+    fontSize: 16,
+    color: "#000000",
   }
-  notes.push(newNote)
+  notes.unshift(newNote)
   saveNotes()
   renderNotes()
-  openEditMode(notes.length - 1)
+  openEditMode(0)
 }
 
 function showDeleteConfirmation(index) {
@@ -82,10 +121,10 @@ function showDeleteConfirmation(index) {
 
 function deleteNote() {
   if (deleteIndex !== -1) {
-  notes.splice(deleteIndex, 1)
-  saveNotes()
-  renderNotes()
-  deleteIndex = -1
+    notes.splice(deleteIndex, 1)
+    saveNotes()
+    renderNotes()
+    deleteIndex = -1
   }
   confirmModal.style.display = "none"
 }
@@ -100,28 +139,35 @@ function openEditMode(index) {
   textColorInput.value = note.color
   updateColorPickerIcon(note.color)
   resetFormatButtons()
-  editOverlay.style.display = "block"
+  editOverlay.style.display = "flex"
+  editOverlay.style.opacity = "0"
+  setTimeout(() => {
+    editOverlay.style.opacity = "1"
+  }, 50)
 
   if (!editTitle.value) {
-  editTitle.placeholder = "Enter title here..."
+    editTitle.placeholder = "Enter title here..."
   }
   if (!editContent.textContent.trim()) {
-  editContent.innerHTML = '<span class="placeholder">Start writing your note here...</span>'
+    editContent.innerHTML = '<span class="placeholder">Start writing your note here...</span>'
   }
 }
 
 function closeEditMode() {
-  editOverlay.style.display = "none"
+  editOverlay.style.opacity = "0"
+  setTimeout(() => {
+    editOverlay.style.display = "none"
+  }, 300)
   currentEditingIndex = -1
 }
 
 function updateNote() {
   if (currentEditingIndex === -1) return
   notes[currentEditingIndex] = {
-  title: editTitle.value,
-  content: editContent.innerHTML,
-  fontSize: Number.parseInt(fontSizeInput.value),
-  color: textColorInput.value,
+    title: editTitle.value,
+    content: editContent.innerHTML,
+    fontSize: Number.parseInt(fontSizeInput.value),
+    color: textColorInput.value,
   }
   saveNotes()
   renderNotes()
@@ -135,13 +181,13 @@ function updateButtonState(button, isActive) {
 
 function resetFormatButtons() {
   ;[boldBtn, italicBtn, underlineBtn, highlightBtn].forEach((btn) => {
-  updateButtonState(btn, false)
+    updateButtonState(btn, false)
   })
   currentFormatState = {
-  bold: false,
-  italic: false,
-  underline: false,
-  highlight: false,
+    bold: false,
+    italic: false,
+    underline: false,
+    highlight: false,
   }
 }
 
@@ -171,37 +217,37 @@ function insertTextWithCurrentFormatting(text) {
 
 function getButtonForFormat(format) {
   switch (format) {
-  case "bold":
-    return boldBtn
-  case "italic":
-    return italicBtn
-  case "underline":
-    return underlineBtn
-  case "highlight":
-    return highlightBtn
+    case "bold":
+      return boldBtn
+    case "italic":
+      return italicBtn
+    case "underline":
+      return underlineBtn
+    case "highlight":
+      return highlightBtn
   }
 }
 
 function updateColorPickerIcon(color) {
   const colorPickerIcon = document.querySelector(".color-picker-icon")
   if (colorPickerIcon) {
-  const bottomPath = colorPickerIcon.querySelector("path:first-child")
-  bottomPath.setAttribute("stroke", color)
+    const bottomPath = colorPickerIcon.querySelector("path:first-child")
+    bottomPath.setAttribute("stroke", color)
   }
 }
 
 function updateColorPickerOnSelection() {
   const selection = window.getSelection()
   if (selection.rangeCount > 0) {
-  const range = selection.getRangeAt(0)
-  const color = window.getComputedStyle(range.startContainer.parentElement).color
-  updateColorPickerIcon(color)
-  textColorInput.value = rgbToHex(color)
+    const range = selection.getRangeAt(0)
+    const color = window.getComputedStyle(range.startContainer.parentElement).color
+    updateColorPickerIcon(color)
+    textColorInput.value = rgbToHex(color)
   }
 }
 
 function rgbToHex(rgb) {
-  const rgbValues = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/)
+  const rgbValues = rgb.match(/^rgb$$(\d+),\s*(\d+),\s*(\d+)$$$/)
   if (!rgbValues) return "#000000"
   const r = Number.parseInt(rgbValues[1], 10).toString(16).padStart(2, "0")
   const g = Number.parseInt(rgbValues[2], 10).toString(16).padStart(2, "0")
@@ -212,13 +258,13 @@ function rgbToHex(rgb) {
 function updateFontSize(newSize) {
   let size = Number.parseInt(newSize)
   if (isNaN(size) || size < 8) {
-  size = 8
-  showFontSizeLimitMessage("min")
+    size = 8
+    showFontSizeLimitMessage("min")
   } else if (size > 250) {
-  size = 250
-  showFontSizeLimitMessage("max")
+    size = 250
+    showFontSizeLimitMessage("max")
   } else {
-  hideFontSizeLimitMessage()
+    hideFontSizeLimitMessage()
   }
   fontSizeInput.value = size
   editContent.style.fontSize = `${size}px`
@@ -229,7 +275,7 @@ function showFontSizeLimitMessage(type) {
   message.style.display = "block"
   clearTimeout(message.timeoutId)
   message.timeoutId = setTimeout(() => {
-  message.style.display = "none"
+    message.style.display = "none"
   }, 2000)
 }
 
@@ -266,10 +312,10 @@ cancelDeleteBtn.addEventListener("click", () => {
 fontSizeInput.addEventListener("input", (e) => {
   const newValue = e.target.value
   if (newValue.length === 0 || (newValue.length === 1 && Number.parseInt(newValue) < 8)) {
-  updateFontSize(8)
-  showFontSizeLimitMessage("min")
+    updateFontSize(8)
+    showFontSizeLimitMessage("min")
   } else {
-  updateFontSize(newValue)
+    updateFontSize(newValue)
   }
 })
 
@@ -279,14 +325,14 @@ fontSizeInput.addEventListener("blur", () => {
 
 fontSizeInput.addEventListener("keydown", (e) => {
   if (e.key === "Backspace" || e.key === "Delete") {
-  if (
-    fontSizeInput.value.length === 1 ||
-    (fontSizeInput.value.length === 2 && Number.parseInt(fontSizeInput.value) < 10)
-  ) {
-    e.preventDefault()
-    updateFontSize(8)
-    showFontSizeLimitMessage("min")
-  }
+    if (
+      fontSizeInput.value.length === 1 ||
+      (fontSizeInput.value.length === 2 && Number.parseInt(fontSizeInput.value) < 10)
+    ) {
+      e.preventDefault()
+      updateFontSize(8)
+      showFontSizeLimitMessage("min")
+    }
   }
 })
 
@@ -346,27 +392,27 @@ highlightBtn.addEventListener("click", (e) => {
 editContent.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault()
-    document.execCommand("insertHTML", false, "<br> ")
+    document.execCommand("insertHTML", false, "<br>")
   }
 
   if (e.ctrlKey) {
     switch (e.key.toLowerCase()) {
-    case "b":
-      e.preventDefault()
-      document.execCommand("bold", false, null)
-      break
-    case "i":
-      e.preventDefault()
-      document.execCommand("italic", false, null)
-      break
-    case "u":
-      e.preventDefault()
-      document.execCommand("underline", false, null)
-      break
-    case "h":
-      e.preventDefault()
-      applyFormatting("highlight")
-      break
+      case "b":
+        e.preventDefault()
+        document.execCommand("bold", false, null)
+        break
+      case "i":
+        e.preventDefault()
+        document.execCommand("italic", false, null)
+        break
+      case "u":
+        e.preventDefault()
+        document.execCommand("underline", false, null)
+        break
+      case "h":
+        e.preventDefault()
+        applyFormatting("highlight")
+        break
     }
   }
 })
@@ -377,26 +423,27 @@ editContent.addEventListener("mouseup", updateAllButtonStates)
 
 editTitle.addEventListener("focus", function () {
   if (this.placeholder) {
-  this.placeholder = ""
+    this.placeholder = ""
   }
 })
 
 editTitle.addEventListener("blur", function () {
   if (!this.value) {
-  this.placeholder = "Enter title here..."
+    this.placeholder = "Enter title here..."
   }
 })
 
 editContent.addEventListener("focus", function () {
   if (this.innerHTML === '<span class="placeholder">Start writing your note here...</span>') {
-  this.innerHTML = ""
+    this.innerHTML = ""
   }
 })
 
 editContent.addEventListener("blur", function () {
   if (!this.textContent.trim()) {
-  this.innerHTML = '<span class="placeholder">Start writing your note here...</span>'
+    this.innerHTML = '<span class="placeholder">Start writing your note here...</span>'
   }
 })
 
 renderNotes()
+renderNotesList()

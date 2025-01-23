@@ -3,15 +3,15 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "postinstall": "chmod +x ./node_modules/.bin/tailwindcss",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "npx tailwindcss -i ./src/input.css -o ./dist/output.css --watch",
-    "build": "npx tailwindcss -i ./src/input.css -o ./dist/output.css --minify"
+    "dev": "npx tailwindcss -i ./dist/styles.css -o ./dist/output.css --watch",
+    "build": "npx tailwindcss -i ./dist/styles.css -o ./dist/output.css --minify"
   },
   "author": "",
   "license": "ISC",
   "description": "",
-  "devDependencies": {
-    "tailwindcss": "^3.4.17"
+  "dependencies": {
+    "@tailwindcss/cli": "^4.0.0",
+    "tailwind": "^4.0.0"
   }
 }

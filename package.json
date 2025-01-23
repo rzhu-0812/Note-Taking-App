@@ -5,7 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "npx tailwindcss -i ./dist/styles.css -o ./dist/output.css --watch",
-    "build": "npx tailwindcss -i ./dist/styles.css -o ./dist/output.css --minify"
+    "build": "npx tailwindcss -i ./dist/styles.css -o ./dist/output.css"
   },
   "author": "",
   "license": "ISC",
@@ -13,5 +13,10 @@
   "dependencies": {
     "@tailwindcss/cli": "^4.0.0",
     "tailwind": "^4.0.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^4.0.0"
   }
 }

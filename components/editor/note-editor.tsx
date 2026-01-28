@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   X,
-  Save,
   Bold,
   Italic,
   Underline,
@@ -12,17 +12,21 @@ import {
   List,
   ListOrdered,
   Link,
-  Code,
   Quote,
-  Type,
-  Palette,
+  Undo2,
   AlignLeft,
   AlignCenter,
   AlignRight,
-  Highlighter,
-  RotateCcw,
 } from "lucide-react";
-import type { Note } from "@/types";
+import type { Note, FormatState } from "@/types";
+import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Modal } from "@/components/ui/modal";
 
 interface NoteEditorProps {
   note: Note | null;
@@ -31,64 +35,71 @@ interface NoteEditorProps {
   onSave: (note: Note) => void;
 }
 
-interface FormatState {
-  bold: boolean;
-  italic: boolean;
-  underline: boolean;
-  highlight: boolean;
-  h1: boolean;
-  h2: boolean;
-  unorderedList: boolean;
-  orderedList: boolean;
-  alignLeft: boolean;
-  alignCenter: boolean;
-  alignRight: boolean;
-  link: boolean;
-  code: boolean;
-  quote: boolean;
-}
+const initialFormatState: FormatState = {
+  bold: false,
+  italic: false,
+  underline: false,
+  h1: false,
+  h2: false,
+  unorderedList: false,
+  orderedList: false,
+  alignLeft: false,
+  alignCenter: false,
+  alignRight: false,
+  link: false,
+  code: false,
+  quote: false,
+};
 
-export function NoteEditor({ note, isOpen, onClose, onSave }: NoteEditorProps) {
+export function NoteEditor({
+  note,
+  isOpen,
+  onClose,
+  onSave,
+}: NoteEditorProps) {
   const [title, setTitle] = useState("");
-  const [fontSize, setFontSize] = useState(16);
-  const [textColor, setTextColor] = useState("#000000");
-  const [formatState, setFormatState] = useState<FormatState>({
-    bold: false,
-    italic: false,
-    underline: false,
-    highlight: false,
-    h1: false,
-    h2: false,
-    unorderedList: false,
-    orderedList: false,
-    alignLeft: false,
-    alignCenter: false,
-    alignRight: false,
-    link: false,
-    code: false,
-    quote: false,
-  });
+  const [formatState, setFormatState] = useState<FormatState>(initialFormatState);
+  const [hasContent, setHasContent] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
   const editorRef = useRef<HTMLDivElement>(null);
+  const savedSelectionRef = useRef<Range | null>(null);
 
   useEffect(() => {
-    if (note) {
+    if (note && isOpen) {
       setTitle(note.title);
-      setFontSize(note.fontSize);
-      setTextColor(note.color);
       if (editorRef.current) {
         editorRef.current.innerHTML = note.content || "";
+        setHasContent(!!note.content);
       }
-    } else {
+    } else if (!note) {
       setTitle("");
-      setFontSize(16);
-      setTextColor("#000000");
       if (editorRef.current) {
         editorRef.current.innerHTML = "";
+        setHasContent(false);
       }
     }
-  }, [note]);
+  }, [note, isOpen]);
 
-  const updateFormatState = () => {
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        handleSave();
+      }
+      if (e.key === "Escape") {
+        handleSave();
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, note, title]);
+
+  const updateFormatState = useCallback(() => {
     if (!editorRef.current) return;
 
     try {
@@ -102,36 +113,12 @@ export function NoteEditor({ note, isOpen, onClose, onSave }: NoteEditorProps) {
           ? container.parentElement
           : (container as Element);
 
-      let hasHighlight = false;
-      let currentElement = element;
-      while (currentElement && currentElement !== editorRef.current) {
-        const computedStyle = window.getComputedStyle(currentElement);
-        const backgroundColor = computedStyle.backgroundColor;
-        if (
-          backgroundColor &&
-          backgroundColor !== "rgba(0, 0, 0, 0)" &&
-          backgroundColor !== "transparent" &&
-          backgroundColor !== "rgb(255, 255, 255)" &&
-          (backgroundColor.includes("255, 255, 0") ||
-            backgroundColor.includes("yellow"))
-        ) {
-          hasHighlight = true;
-          break;
-        }
-        currentElement = currentElement.parentElement;
-      }
-
       setFormatState({
         bold: document.queryCommandState("bold"),
         italic: document.queryCommandState("italic"),
         underline: document.queryCommandState("underline"),
-        highlight: hasHighlight,
-        h1:
-          element?.tagName === "H1" ||
-          document.queryCommandValue("formatBlock") === "h1",
-        h2:
-          element?.tagName === "H2" ||
-          document.queryCommandValue("formatBlock") === "h2",
+        h1: element?.tagName === "H1" || document.queryCommandValue("formatBlock") === "h1",
+        h2: element?.tagName === "H2" || document.queryCommandValue("formatBlock") === "h2",
         unorderedList: document.queryCommandState("insertUnorderedList"),
         orderedList: document.queryCommandState("insertOrderedList"),
         alignLeft: document.queryCommandState("justifyLeft"),
@@ -139,105 +126,36 @@ export function NoteEditor({ note, isOpen, onClose, onSave }: NoteEditorProps) {
         alignRight: document.queryCommandState("justifyRight"),
         link: element?.tagName === "A" || element?.closest("a") !== null,
         code: element?.tagName === "PRE" || element?.closest("pre") !== null,
-        quote:
-          element?.tagName === "BLOCKQUOTE" ||
-          element?.closest("blockquote") !== null,
+        quote: element?.tagName === "BLOCKQUOTE" || element?.closest("blockquote") !== null,
       });
-    } catch (error) {
-      console.error("Error updating format state:", error);
-    }
-  };
+    } catch {}
+  }, []);
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     if (!note || !editorRef.current) return;
 
     const updatedNote: Note = {
       ...note,
-      title: title || "Untitled Note",
+      title: title || "Untitled",
       content: editorRef.current.innerHTML,
-      fontSize,
-      color: textColor,
       updatedAt: new Date().toISOString(),
     };
 
     onSave(updatedNote);
+  }, [note, title, onSave]);
+
+  const handleClose = () => {
+    handleSave();
     onClose();
   };
 
-  const execCommand = (command: string, value?: string) => {
+  const execCommand = useCallback((command: string, value?: string) => {
     document.execCommand(command, false, value);
     editorRef.current?.focus();
     setTimeout(updateFormatState, 10);
-  };
+  }, [updateFormatState]);
 
-  const handleColorChange = (newColor: string) => {
-    setTextColor(newColor);
-
-    const selection = window.getSelection();
-    if (!selection || !editorRef.current) return;
-
-    if (selection.rangeCount > 0 && !selection.getRangeAt(0).collapsed) {
-      document.execCommand("foreColor", false, newColor);
-    } else {
-      document.execCommand("foreColor", false, newColor);
-    }
-
-    editorRef.current.focus();
-    setTimeout(updateFormatState, 10);
-  };
-
-  const toggleHighlight = () => {
-    const selection = window.getSelection();
-    if (!selection || !editorRef.current) return;
-
-    if (selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-
-      if (range.collapsed) {
-        if (formatState.highlight) {
-          document.execCommand("backColor", false, "transparent");
-        } else {
-          document.execCommand("backColor", false, "#ffff00");
-        }
-      } else {
-        const container = range.commonAncestorContainer;
-        const element =
-          container.nodeType === Node.TEXT_NODE
-            ? container.parentElement
-            : (container as Element);
-
-        let hasHighlight = false;
-        let currentElement = element;
-        while (currentElement && currentElement !== editorRef.current) {
-          const computedStyle = window.getComputedStyle(currentElement);
-          const backgroundColor = computedStyle.backgroundColor;
-          if (
-            backgroundColor &&
-            backgroundColor !== "rgba(0, 0, 0, 0)" &&
-            backgroundColor !== "transparent" &&
-            backgroundColor !== "rgb(255, 255, 255)" &&
-            (backgroundColor.includes("255, 255, 0") ||
-              backgroundColor.includes("yellow"))
-          ) {
-            hasHighlight = true;
-            break;
-          }
-          currentElement = currentElement.parentElement;
-        }
-
-        if (hasHighlight || formatState.highlight) {
-          document.execCommand("removeFormat", false, undefined);
-        } else {
-          document.execCommand("backColor", false, "#ffff00");
-        }
-      }
-    }
-
-    editorRef.current.focus();
-    setTimeout(updateFormatState, 10);
-  };
-
-  const toggleHeader = (headerType: "h1" | "h2") => {
+  const toggleHeader = useCallback((headerType: "h1" | "h2") => {
     const isCurrentlyThisHeader =
       (headerType === "h1" && formatState.h1) ||
       (headerType === "h2" && formatState.h2);
@@ -250,393 +168,239 @@ export function NoteEditor({ note, isOpen, onClose, onSave }: NoteEditorProps) {
 
     editorRef.current?.focus();
     setTimeout(updateFormatState, 10);
-  };
+  }, [formatState.h1, formatState.h2, updateFormatState]);
 
-  const clearFormatting = () => {
+  const clearFormatting = useCallback(() => {
     document.execCommand("removeFormat", false, undefined);
     document.execCommand("formatBlock", false, "p");
     editorRef.current?.focus();
     setTimeout(updateFormatState, 10);
-  };
+  }, [updateFormatState]);
 
-  const formatButtons = [
-    {
-      icon: Bold,
-      title: "Bold",
-      command: "bold",
-      active: formatState.bold,
-    },
-    {
-      icon: Italic,
-      title: "Italic",
-      command: "italic",
-      active: formatState.italic,
-    },
-    {
-      icon: Underline,
-      title: "Underline",
-      command: "underline",
-      active: formatState.underline,
-    },
-  ];
+  const openLinkModal = useCallback(() => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      savedSelectionRef.current = selection.getRangeAt(0).cloneRange();
+    }
+    setLinkUrl("");
+    setShowLinkModal(true);
+  }, []);
 
-  const headerButtons = [
-    {
-      icon: Heading1,
-      title: "Heading 1 (click again to remove)",
-      active: formatState.h1,
-      action: () => toggleHeader("h1"),
-    },
-    {
-      icon: Heading2,
-      title: "Heading 2 (click again to remove)",
-      active: formatState.h2,
-      action: () => toggleHeader("h2"),
-    },
-  ];
+  const insertLink = useCallback(() => {
+    if (!linkUrl.trim()) return;
+    
+    if (savedSelectionRef.current && editorRef.current) {
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(savedSelectionRef.current);
+      }
+    }
+    
+    let url = linkUrl.trim();
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      url = "https://" + url;
+    }
+    
+    document.execCommand("createLink", false, url);
+    editorRef.current?.focus();
+    setTimeout(updateFormatState, 10);
+    
+    setShowLinkModal(false);
+    setLinkUrl("");
+    savedSelectionRef.current = null;
+  }, [linkUrl, updateFormatState]);
 
-  const listButtons = [
-    {
-      icon: List,
-      title: "Bullet List",
-      command: "insertUnorderedList",
-      active: formatState.unorderedList,
-    },
-    {
-      icon: ListOrdered,
-      title: "Numbered List",
-      command: "insertOrderedList",
-      active: formatState.orderedList,
-    },
-  ];
-
-  const alignButtons = [
-    {
-      icon: AlignLeft,
-      title: "Align Left",
-      command: "justifyLeft",
-      active: formatState.alignLeft,
-    },
-    {
-      icon: AlignCenter,
-      title: "Align Center",
-      command: "justifyCenter",
-      active: formatState.alignCenter,
-    },
-    {
-      icon: AlignRight,
-      title: "Align Right",
-      command: "justifyRight",
-      active: formatState.alignRight,
-    },
-  ];
-
-  const specialButtons = [
-    {
-      icon: Link,
-      title: "Insert Link",
-      active: formatState.link,
-      action: () => {
-        const url = prompt("Enter URL:");
-        if (url) {
-          execCommand("createLink", url);
-        }
-      },
-    },
-    {
-      icon: Code,
-      title: "Code Block",
-      active: formatState.code,
-      action: () => execCommand("formatBlock", "pre"),
-    },
-    {
-      icon: Quote,
-      title: "Quote",
-      active: formatState.quote,
-      action: () => execCommand("formatBlock", "blockquote"),
-    },
-  ];
-
-  const handleEditorEvents = () => {
+  const handleEditorInput = () => {
+    const content = editorRef.current?.innerHTML || "";
+    setHasContent(content.length > 0 && content !== "<br>");
     updateFormatState();
   };
 
   if (!isOpen) return null;
 
+  const toolbarColors = {
+    text: "hover:text-[oklch(0.55_0.18_250)] hover:bg-[oklch(0.94_0.03_250)]",
+    heading: "hover:text-[oklch(0.55_0.18_300)] hover:bg-[oklch(0.94_0.03_300)]",
+    list: "hover:text-[oklch(0.50_0.15_145)] hover:bg-[oklch(0.94_0.03_145)]",
+    align: "hover:text-[oklch(0.58_0.16_55)] hover:bg-[oklch(0.94_0.04_55)]",
+    special: "hover:text-[oklch(0.45_0.15_270)] hover:bg-[oklch(0.92_0.03_270)]",
+  };
+
+  const toolbarActiveColors = {
+    text: "bg-[oklch(0.94_0.03_250)] text-[oklch(0.55_0.18_250)]",
+    heading: "bg-[oklch(0.94_0.03_300)] text-[oklch(0.55_0.18_300)]",
+    list: "bg-[oklch(0.94_0.03_145)] text-[oklch(0.50_0.15_145)]",
+    align: "bg-[oklch(0.94_0.04_55)] text-[oklch(0.58_0.16_55)]",
+    special: "bg-[oklch(0.92_0.03_270)] text-[oklch(0.45_0.15_270)]",
+  };
+
+  const ToolbarButton = ({
+    icon: Icon,
+    title,
+    active,
+    onClick,
+    shortcut,
+    colorCategory = "text",
+  }: {
+    icon: React.ElementType;
+    title: string;
+    active?: boolean;
+    onClick: () => void;
+    shortcut?: string;
+    colorCategory?: keyof typeof toolbarColors;
+  }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick}
+          className={cn(
+            "p-2 rounded-md transition-all duration-150",
+            "hover:scale-110 active:scale-95",
+            active
+              ? toolbarActiveColors[colorCategory]
+              : cn("text-muted-foreground", toolbarColors[colorCategory])
+          )}
+          aria-label={title}
+          type="button"
+        >
+          <Icon className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {title}
+        {shortcut && <span className="ml-2 text-muted-foreground">{shortcut}</span>}
+      </TooltipContent>
+    </Tooltip>
+  );
+
+  const ToolbarDivider = () => (
+    <div className="w-px h-6 bg-border mx-1.5" />
+  );
+
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gray-50">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Note title..."
-            className="text-2xl font-bold bg-transparent border-0 outline-none flex-1 mr-4 placeholder-gray-400"
-          />
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleSave}
-              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-            >
-              <Save className="h-4 w-4" />
-              Save
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
+    <TooltipProvider delayDuration={300}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
+        <div
+          className="absolute inset-0 bg-foreground/40 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={handleClose}
+          aria-hidden="true"
+        />
 
-        <div className="border-b bg-gray-50 p-4">
-          <div className="flex flex-wrap gap-2 items-center mb-4">
-            <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-              {formatButtons.map((button, index) => (
-                <button
-                  key={index}
-                  onClick={() => execCommand(button.command)}
-                  className={`p-3 transition-colors border-r border-gray-200 last:border-r-0 ${
-                    button.active
-                      ? "bg-blue-100 text-blue-700"
-                      : "hover:bg-gray-50 text-gray-700"
-                  }`}
-                  title={button.title}
-                >
-                  <button.icon className="h-4 w-4" />
-                </button>
-              ))}
+        <div className="relative w-full max-w-4xl h-[90vh] bg-card rounded-xl shadow-2xl border border-border flex flex-col overflow-hidden animate-in zoom-in-95 fade-in duration-200">
+          <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Untitled note"
+              className="flex-1 text-xl font-semibold bg-transparent border-0 outline-none placeholder:text-muted-foreground"
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground hidden sm:block">
+                Auto-saved
+              </span>
               <button
-                onClick={toggleHighlight}
-                className={`p-3 transition-colors ${
-                  formatState.highlight
-                    ? "bg-yellow-100 text-yellow-700"
-                    : "hover:bg-gray-50 text-gray-700"
-                }`}
-                title="Highlight (Yellow) - Click again to remove"
+                onClick={handleClose}
+                className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+                aria-label="Close editor"
               >
-                <Highlighter className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
+          </header>
 
-            <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-              {headerButtons.map((button, index) => (
-                <button
-                  key={index}
-                  onClick={button.action}
-                  className={`p-3 transition-colors border-r border-gray-200 last:border-r-0 ${
-                    button.active
-                      ? "bg-purple-100 text-purple-700"
-                      : "hover:bg-gray-50 text-gray-700"
-                  }`}
-                  title={button.title}
-                >
-                  <button.icon className="h-4 w-4" />
-                </button>
-              ))}
-            </div>
-
-            <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-              {listButtons.map((button, index) => (
-                <button
-                  key={index}
-                  onClick={() => execCommand(button.command)}
-                  className={`p-3 transition-colors border-r border-gray-200 last:border-r-0 ${
-                    button.active
-                      ? "bg-green-100 text-green-700"
-                      : "hover:bg-gray-50 text-gray-700"
-                  }`}
-                  title={button.title}
-                >
-                  <button.icon className="h-4 w-4" />
-                </button>
-              ))}
-            </div>
-
-            <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-              {alignButtons.map((button, index) => (
-                <button
-                  key={index}
-                  onClick={() => execCommand(button.command)}
-                  className={`p-3 transition-colors border-r border-gray-200 last:border-r-0 ${
-                    button.active
-                      ? "bg-orange-100 text-orange-700"
-                      : "hover:bg-gray-50 text-gray-700"
-                  }`}
-                  title={button.title}
-                >
-                  <button.icon className="h-4 w-4" />
-                </button>
-              ))}
-            </div>
-
-            <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-              {specialButtons.map((button, index) => (
-                <button
-                  key={index}
-                  onClick={button.action}
-                  className={`p-3 transition-colors border-r border-gray-200 last:border-r-0 ${
-                    button.active
-                      ? "bg-indigo-100 text-indigo-700"
-                      : "hover:bg-gray-50 text-gray-700"
-                  }`}
-                  title={button.title}
-                >
-                  <button.icon className="h-4 w-4" />
-                </button>
-              ))}
-            </div>
-
-            <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-              <button
-                onClick={clearFormatting}
-                className="p-3 hover:bg-gray-50 text-gray-700 transition-colors"
-                title="Clear All Formatting"
-              >
-                <RotateCcw className="h-4 w-4" />
-              </button>
-            </div>
+          <div className="flex flex-wrap items-center gap-0.5 px-4 py-2 border-b border-border bg-muted/20">
+            <ToolbarButton icon={Bold} title="Bold" shortcut="Cmd+B" active={formatState.bold} onClick={() => execCommand("bold")} colorCategory="text" />
+            <ToolbarButton icon={Italic} title="Italic" shortcut="Cmd+I" active={formatState.italic} onClick={() => execCommand("italic")} colorCategory="text" />
+            <ToolbarButton icon={Underline} title="Underline" shortcut="Cmd+U" active={formatState.underline} onClick={() => execCommand("underline")} colorCategory="text" />
+            <ToolbarDivider />
+            <ToolbarButton icon={Heading1} title="Heading 1" active={formatState.h1} onClick={() => toggleHeader("h1")} colorCategory="heading" />
+            <ToolbarButton icon={Heading2} title="Heading 2" active={formatState.h2} onClick={() => toggleHeader("h2")} colorCategory="heading" />
+            <ToolbarDivider />
+            <ToolbarButton icon={List} title="Bullet list" active={formatState.unorderedList} onClick={() => execCommand("insertUnorderedList")} colorCategory="list" />
+            <ToolbarButton icon={ListOrdered} title="Numbered list" active={formatState.orderedList} onClick={() => execCommand("insertOrderedList")} colorCategory="list" />
+            <ToolbarDivider />
+            <ToolbarButton icon={AlignLeft} title="Align left" active={formatState.alignLeft} onClick={() => execCommand("justifyLeft")} colorCategory="align" />
+            <ToolbarButton icon={AlignCenter} title="Align center" active={formatState.alignCenter} onClick={() => execCommand("justifyCenter")} colorCategory="align" />
+            <ToolbarButton icon={AlignRight} title="Align right" active={formatState.alignRight} onClick={() => execCommand("justifyRight")} colorCategory="align" />
+            <ToolbarDivider />
+            <ToolbarButton icon={Link} title="Insert link" active={formatState.link} onClick={openLinkModal} colorCategory="special" />
+            <ToolbarButton icon={Quote} title="Quote" active={formatState.quote} onClick={() => execCommand("formatBlock", "blockquote")} colorCategory="special" />
+            <ToolbarDivider />
+            <ToolbarButton icon={Undo2} title="Clear formatting" onClick={clearFormatting} colorCategory="text" />
           </div>
 
-          <div className="flex flex-wrap gap-4 items-center">
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
-              <Type className="h-4 w-4 text-gray-500" />
-              <label className="text-sm font-medium text-gray-700">Size:</label>
-              <input
-                type="range"
-                min="12"
-                max="24"
-                value={fontSize}
-                onChange={(e) => setFontSize(Number(e.target.value))}
-                className="w-20"
-              />
-              <span className="text-sm text-gray-600 w-8">{fontSize}px</span>
-            </div>
-
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-4 py-2 shadow-sm">
-              <Palette className="h-4 w-4 text-gray-500" />
-              <label className="text-sm font-medium text-gray-700">
-                Text Color:
-              </label>
-              <div className="relative">
-                <div
-                  className="w-8 h-8 rounded-full border-2 border-gray-300 cursor-pointer shadow-sm"
-                  style={{ backgroundColor: textColor }}
-                  title="Click to change text color - applies automatically to selected text or next typed text"
-                />
-                <input
-                  type="color"
-                  value={textColor}
-                  onChange={(e) => handleColorChange(e.target.value)}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {Object.entries(formatState).some(([, active]) => active) && (
-              <div className="text-xs text-gray-600 flex items-center gap-2">
-                <span className="font-medium">Active:</span>
-                {formatState.bold && (
-                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                    Bold
-                  </span>
-                )}
-                {formatState.italic && (
-                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                    Italic
-                  </span>
-                )}
-                {formatState.underline && (
-                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                    Underline
-                  </span>
-                )}
-                {formatState.highlight && (
-                  <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
-                    Highlight
-                  </span>
-                )}
-                {formatState.h1 && (
-                  <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                    Heading 1
-                  </span>
-                )}
-                {formatState.h2 && (
-                  <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                    Heading 2
-                  </span>
-                )}
-                {formatState.unorderedList && (
-                  <span className="bg-green-100 text-green-700 px-2 py-1 rounded">
-                    Bullet List
-                  </span>
-                )}
-                {formatState.orderedList && (
-                  <span className="bg-green-100 text-green-700 px-2 py-1 rounded">
-                    Numbered List
-                  </span>
-                )}
-                {formatState.alignLeft && (
-                  <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded">
-                    Left Align
-                  </span>
-                )}
-                {formatState.alignCenter && (
-                  <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded">
-                    Center Align
-                  </span>
-                )}
-                {formatState.alignRight && (
-                  <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded">
-                    Right Align
-                  </span>
-                )}
-                {formatState.link && (
-                  <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
-                    Link
-                  </span>
-                )}
-                {formatState.code && (
-                  <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
-                    Code
-                  </span>
-                )}
-                {formatState.quote && (
-                  <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
-                    Quote
-                  </span>
-                )}
+          <div className="flex-1 overflow-hidden relative">
+            <div
+              ref={editorRef}
+              contentEditable
+              className="w-full h-full p-6 md:p-8 outline-none overflow-y-auto scrollbar-thin prose-editor text-card-foreground leading-relaxed"
+              suppressContentEditableWarning={true}
+              onKeyUp={updateFormatState}
+              onMouseUp={updateFormatState}
+              onFocus={updateFormatState}
+              onInput={handleEditorInput}
+            />
+            {!hasContent && (
+              <div className="absolute top-6 md:top-8 left-6 md:left-8 text-muted-foreground pointer-events-none select-none">
+                Start writing...
               </div>
             )}
           </div>
         </div>
-
-        <div className="flex-1 overflow-hidden relative">
-          <div
-            ref={editorRef}
-            contentEditable
-            className="w-full h-full p-8 outline-none overflow-y-auto prose prose-lg max-w-none text-gray-900"
-            style={{
-              fontSize: `${fontSize}px`,
-            }}
-            suppressContentEditableWarning={true}
-            onKeyUp={handleEditorEvents}
-            onMouseUp={handleEditorEvents}
-            onFocus={handleEditorEvents}
-            onInput={handleEditorEvents}
-          />
-          {(!editorRef.current?.innerHTML ||
-            editorRef.current.innerHTML === "") && (
-            <div className="absolute top-8 left-8 text-gray-400 pointer-events-none select-none">
-              Start writing your note...
-            </div>
-          )}
-        </div>
       </div>
-    </div>
+
+      <Modal
+        isOpen={showLinkModal}
+        onClose={() => {
+          setShowLinkModal(false);
+          setLinkUrl("");
+          savedSelectionRef.current = null;
+        }}
+        title="Insert Link"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="link-url" className="block text-sm font-medium text-foreground mb-2">
+              URL
+            </label>
+            <input
+              id="link-url"
+              type="text"
+              placeholder="https://example.com"
+              value={linkUrl}
+              onChange={(e) => setLinkUrl(e.target.value)}
+              className="w-full px-4 py-2.5 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+              onKeyDown={(e) => e.key === "Enter" && insertLink()}
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground mt-1.5">
+              Select text in the editor first, then add a link
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => {
+                setShowLinkModal(false);
+                setLinkUrl("");
+                savedSelectionRef.current = null;
+              }}
+              className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all hover:scale-105 active:scale-95"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={insertLink}
+              disabled={!linkUrl.trim()}
+              className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
+            >
+              Insert Link
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </TooltipProvider>
   );
 }

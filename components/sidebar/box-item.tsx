@@ -1,10 +1,15 @@
 "use client";
 
 import type React from "react";
-
-import { useState } from "react";
-import { Edit3, Trash2, Archive } from "lucide-react";
+import { Folder, MoreHorizontal, GripVertical } from "lucide-react";
 import type { Box } from "@/types";
+import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface BoxItemProps {
   box: Box;
@@ -29,59 +34,67 @@ export function BoxItem({
   onDrop,
   canDelete,
 }: BoxItemProps) {
-  const [showActions, setShowActions] = useState(false);
-
   return (
     <div
       draggable
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all group ${
+      className={cn(
+        "group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150",
         isActive
-          ? "bg-blue-100 text-blue-700"
-          : "hover:bg-gray-100 text-gray-700"
-      }`}
+          ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+          : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:translate-x-0.5"
+      )}
       onClick={onClick}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onClick()}
     >
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        <Archive className="h-4 w-4 flex-shrink-0" />
-        <span className="truncate font-medium">{box.name}</span>
-        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded-full">
-          {box.notes.length}
-        </span>
-      </div>
+      <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 cursor-grab transition-opacity" />
 
-      <div
-        className={`flex items-center gap-1 transition-opacity ${
-          showActions ? "opacity-100" : "opacity-0"
-        }`}
-      >
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
-          }}
-          className="p-1 rounded hover:bg-gray-200 transition-colors"
-          title="Edit box"
-        >
-          <Edit3 className="h-3 w-3" />
-        </button>
-        {canDelete && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="p-1 rounded hover:bg-gray-200 transition-colors text-red-600"
-            title="Delete box"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
+      <Folder
+        className={cn(
+          "h-4 w-4 shrink-0 transition-colors",
+          isActive ? "text-sidebar-primary" : "text-muted-foreground"
         )}
-      </div>
+      />
+
+      <span className="truncate flex-1 text-sm font-medium">{box.name}</span>
+
+      <span
+        className={cn(
+          "text-xs tabular-nums px-1.5 py-0.5 rounded",
+          isActive
+            ? "bg-sidebar-primary/10 text-sidebar-primary"
+            : "text-muted-foreground"
+        )}
+      >
+        {box.notes.length}
+      </span>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            onClick={(e) => e.stopPropagation()}
+            className="p-1 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 transition-all"
+            aria-label="Box options"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-36">
+          <DropdownMenuItem onClick={onEdit}>Rename</DropdownMenuItem>
+          {canDelete && (
+            <DropdownMenuItem
+              onClick={onDelete}
+              className="text-destructive focus:text-destructive"
+            >
+              Delete
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

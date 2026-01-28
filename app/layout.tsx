@@ -1,4 +1,16 @@
+import React from "react"
+import type { Metadata } from 'next'
+import { Geist, Geist_Mono } from 'next/font/google'
+import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
+
+const _geist = Geist({ subsets: ["latin"] });
+const _geistMono = Geist_Mono({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: 'JotBox - Modern Note Taking',
+  description: 'A clean, minimal note-taking app to capture your thoughts, ideas, and important information.'
+}
 
 export default function RootLayout({
   children,
@@ -7,7 +19,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning={true}>{children}</body>
+      <body className={`font-sans antialiased`}>
+        {children}
+        <Analytics />
+      </body>
     </html>
   )
 }
